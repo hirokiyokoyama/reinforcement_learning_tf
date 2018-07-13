@@ -42,16 +42,18 @@ class DQN:
         sampled_rewards = tf.gather(self.reward_history, history_inds)
         sampled_next_states = tf.gather(self.state_history, history_inds)
         with tf.variable_scope('q', reuse=False):
-            target_q = q_fn(sampled_next_states)
+            target_q = q_fn(sampled_next_states, is_training=False)
         target_q = sampled_rewards + self.gamma * tf.reduce_max(target_q, 1)
         target_q = tf.stop_gradient(target_q)
         with tf.variable_scope('q', reuse=True):
-            _q = q_fn(sampled_states)
+            _q = q_fn(sampled_states, is_training=True)
             _q = tf.gather_nd(_q, tf.stack([tf.range(batch_size), sampled_actions], 1))
         self.loss = tf.reduce_mean(tf.square(target_q - _q))
         self.train_summary = tf.summary.merge([tf.summary.scalar('loss', self.loss)])
         opt = tf.train.GradientDescentOptimizer(self.learning_rate)
-        self.train_op = opt.minimize(self.loss, global_step=self.global_step)
+        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        with tf.control_dependencies(update_ops):
+            self.train_op = opt.minimize(self.loss, global_step=self.global_step)
 
         self.state = tf.placeholder(tf.float32, shape=state_shape)
         self.action = tf.placeholder(tf.int32, shape=[])
@@ -67,7 +69,7 @@ class DQN:
             self.hist_op = self.history_pointer.assign((self.history_pointer + 1) % history_size)
 
         with tf.variable_scope('q', reuse=True):
-            q = q_fn(tf.expand_dims(self.state, 0))
+            q = q_fn(tf.expand_dims(self.state, 0), is_training=False)
         probs = tf.nn.softmax(q)[0]
         self.next_action = tf.distributions.Categorical(probs=probs).sample()
 
@@ -88,7 +90,7 @@ class DQN:
     def update(self, sess):
         count = sess.run(self.history_count)
         if count >= self.batch_size:
-            loss,_,s,t = sess.run([self.loss, self.train_op, self.train_summary, self.global_step])[0]
+            loss,_,s,t = sess.run([self.loss, self.train_op, self.train_summary, self.global_step])
             self.summary_writer.add_summary(s, t)
             return loss
         else:
@@ -99,7 +101,15 @@ if __name__=='__main__':
     import os
     from nets import atari_cnn
 
-    if os.environ['DISPLAY']:
+    DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
+    MODEL_DIR = os.path.join(DATA_DIR, 'model')
+    LOG_DIR = os.path.join(DATA_DIR, 'log')
+    if not os.path.exists(DATA_DIR):
+        os.mkdir(DATA_DIR)
+    if not os.path.exists(MODEL_DIR):
+        os.mkdir(MODEL_DIR)
+
+    if 'DISPLAY' in os.environ and os.environ['DISPLAY']:
         import cv2
         def show(x):
             cv2.imshow('State', x[:,:,::-1])
@@ -108,11 +118,18 @@ if __name__=='__main__':
         show = lambda x: None
 
     env = gym.make('SpaceInvaders-v0')
-    q_fn = lambda x: atari_cnn(x, num_classes=env.action_space.n)
-    dqn = DQN(q_fn, env.observation_space.shape)
+    def q_fn(x, is_training=True):
+        return atari_cnn(x, num_classes=env.action_space.n, is_training=is_training)
+    dqn = DQN(q_fn, env.observation_space.shape,
+              summary_writer=tf.summary.FileWriter(MODEL_DIR))
 
     sess = tf.Session()
-    sess.run(tf.global_variables_initializer())
+    saver = tf.train.Saver()
+    latest_ckpt = tf.train.latest_checkpoint(MODEL_DIR)
+    if latest_ckpt is not None:
+        saver.restore(sess, latest_ckpt)
+    else:
+        sess.run(tf.global_variables_initializer())
 
     while True:
         state = env.reset()
@@ -124,3 +141,4 @@ if __name__=='__main__':
             action = dqn.step(sess, state, action, reward)
             loss = dqn.update(sess)
             show(state)
+        saver.save(sess, os.path.join(MODEL_DIR, 'model.ckpt'), global_step=dqn.global_step)
