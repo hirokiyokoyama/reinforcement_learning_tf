@@ -143,6 +143,7 @@ if __name__=='__main__':
         while not done:
             state, reward, done, meta = env.step(action)
             state = state/255.
+            reward = reward/10.
             action = dqn.step(sess, state, action, reward)
             if count % 8 == 0:
                 loss = dqn.update(sess)
