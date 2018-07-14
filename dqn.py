@@ -4,7 +4,7 @@ import numpy as np
 class DQN:
     def __init__(self, q_fn, state_shape,
                  summary_writer = None,
-                 history_size=1000,
+                 history_size=5000,
                  batch_size=32,
                  learning_rate=0.001,
                  gamma=0.995):
@@ -134,14 +134,18 @@ if __name__=='__main__':
         sess.run(tf.global_variables_initializer())
     sess.run(dqn.history_initializer)
 
+    count = 0
     while True:
-        state = env.reset()
+        state = env.reset()/255.
         show(state)
         done = False
         action = dqn.init_episode(sess, state)
         while not done:
             state, reward, done, meta = env.step(action)
+            state = state/255.
             action = dqn.step(sess, state, action, reward)
-            loss = dqn.update(sess)
+            if count % 8 = 0:
+                loss = dqn.update(sess)
             show(state)
+            count += 1
         saver.save(sess, os.path.join(MODEL_DIR, 'model.ckpt'), global_step=dqn.global_step)
