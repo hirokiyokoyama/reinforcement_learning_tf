@@ -6,7 +6,7 @@ class DQN:
                  summary_writer = None,
                  history_size=5000,
                  batch_size=32,
-                 learning_rate=0.001,
+                 learning_rate=0.0001,
                  gamma=0.995):
         self.learning_rate = learning_rate
         self.gamma = gamma
@@ -51,7 +51,8 @@ class DQN:
             _q = q_fn(sampled_states, is_training=True)
             _q = tf.gather_nd(_q, tf.stack([tf.range(batch_size), sampled_actions], 1))
         self.loss = tf.reduce_mean(tf.square(target_q - _q))
-        self.train_summary = tf.summary.merge([tf.summary.scalar('loss', self.loss)])
+        self.train_summary = tf.summary.merge([tf.summary.histogram('Q', _q),
+                                               tf.summary.scalar('loss', self.loss)])
         opt = tf.train.GradientDescentOptimizer(self.learning_rate)
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):
@@ -143,7 +144,7 @@ if __name__=='__main__':
         while not done:
             state, reward, done, meta = env.step(action)
             state = state/255.
-            reward = reward/10.
+            reward = reward/100.
             action = dqn.step(sess, state, action, reward)
             if count % 8 == 0:
                 loss = dqn.update(sess)
