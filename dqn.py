@@ -49,8 +49,8 @@ class DQN:
         target_q = tf.stop_gradient(target_q)
         with tf.variable_scope('q', reuse=True):
             _q = q_fn(sampled_states, is_training=True)
-            _q = tf.gather_nd(_q, tf.stack([tf.range(batch_size), sampled_actions], 1))
-        self.loss = tf.reduce_mean(tf.square(target_q - _q))
+        __q = tf.gather_nd(_q, tf.stack([tf.range(batch_size), sampled_actions], 1))
+        self.loss = tf.reduce_mean(tf.square(target_q - __q))
         self.train_summary = tf.summary.merge([tf.summary.histogram('Q', _q),
                                                tf.summary.scalar('max Q', tf.reduce_mean(tf.reduce_max(_q, 1))),
                                                tf.summary.scalar('min Q', tf.reduce_mean(tf.reduce_min(_q, 1))),
