@@ -26,15 +26,17 @@ class DQN:
                                                  tf.summary.scalar('episode_steps', self.episode_step)])
         
         self.state_history = tf.Variable(tf.zeros([history_size]+list(state_shape), dtype=tf.float32),
-                                         trainable = False)
+                                         trainable = False, collections=['history'])
         self.action_history = tf.Variable(-tf.ones([history_size], dtype=tf.int32),
-                                          trainable = False)
+                                          trainable = False, collections=['history'])
         self.reward_history = tf.Variable(tf.zeros([history_size], dtype=tf.float32),
-                                          trainable = False)
+                                          trainable = False, collections=['history'])
         self.history_mask = tf.greater_equal(self.action_history, 0)
         self.history_count = tf.reduce_sum(tf.cast(self.history_mask, tf.int32))
         self.history_pointer = tf.Variable(tf.constant(0, dtype=tf.int32),
-                                           trainable = False)
+                                           trainable = False,  collections=['history'])
+        self.history_saver = tf.train.Saver(var_list=tf.get_collection('history'))
+        self.history_initializer = tf.group(map(lambda v: v.initializer, tf.get_collection('history')))
 
         history_inds = tf.random_shuffle(tf.where(self.history_mask)[:,0])[:batch_size]
         sampled_states = tf.gather(self.state_history, (history_inds-1) % history_size)
@@ -121,7 +123,7 @@ if __name__=='__main__':
     def q_fn(x, is_training=True):
         return atari_cnn(x, num_classes=env.action_space.n, is_training=is_training)
     dqn = DQN(q_fn, env.observation_space.shape,
-              summary_writer=tf.summary.FileWriter(MODEL_DIR))
+              summary_writer=tf.summary.FileWriter(LOG_DIR))
 
     sess = tf.Session()
     saver = tf.train.Saver()
@@ -130,6 +132,7 @@ if __name__=='__main__':
         saver.restore(sess, latest_ckpt)
     else:
         sess.run(tf.global_variables_initializer())
+    sess.run(dqn.history_initializer)
 
     while True:
         state = env.reset()
