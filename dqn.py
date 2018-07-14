@@ -125,7 +125,7 @@ if __name__=='__main__':
 
     env = gym.make('SpaceInvaders-v0')
     def q_fn(x, is_training=True):
-        return atari_cnn(x, num_classes=env.action_space.n, is_training=is_training)
+        return atari_cnn(x, num_classes=env.action_space.n, is_training=is_training)/10.
     dqn = DQN(q_fn, env.observation_space.shape,
               summary_writer=tf.summary.FileWriter(LOG_DIR))
 
