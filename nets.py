@@ -41,6 +41,7 @@ def atari_cnn(x, num_classes=6, is_training=True):
         net = slim.conv2d(net, 2048, [4,3], padding='VALID')
         net = slim.conv2d(net, 1024, [1,1])
         # [1,1]
-        net = slim.conv2d(net, num_classes, [4,3], padding='VALID')
+        net = slim.conv2d(net, num_classes, [4,3], padding='VALID',
+                          normalizer_fn=None, activation_fn=None)
     net = tf.reshape(net, [-1,num_classes])
     return net
