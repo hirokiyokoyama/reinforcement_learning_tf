@@ -52,8 +52,6 @@ class DQN:
         __q = tf.gather_nd(_q, tf.stack([tf.range(batch_size), sampled_actions], 1))
         self.loss = tf.reduce_mean(tf.square(target_q - __q))
         self.train_summary = tf.summary.merge([tf.summary.histogram('Q', _q),
-                                               tf.summary.scalar('max Q', tf.reduce_mean(tf.reduce_max(_q, 1))),
-                                               tf.summary.scalar('min Q', tf.reduce_mean(tf.reduce_min(_q, 1))),
                                                tf.summary.scalar('loss', self.loss)])
         opt = tf.train.GradientDescentOptimizer(self.learning_rate)
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -76,6 +74,8 @@ class DQN:
         with tf.variable_scope('q', reuse=True):
             q = q_fn(tf.expand_dims(self.state, 0), is_training=False)
         probs = tf.nn.softmax(q)[0]
+        self.step_summary = tf.summary.merge([tf.summary.scalar('max_prob', tf.reduce_max(probs)),
+                                              tf.summary.scalar('min_prob', tf.reduce_min(probs))])
         self.next_action = tf.distributions.Categorical(probs=probs).sample()
 
     def init_episode(self, sess, state):
@@ -87,8 +87,9 @@ class DQN:
                 s, t = sess.run([self.episode_summary, self.trained_episodes])
                 self.summary_writer.add_summary(s, t)
                 sess.run(self.init_episode_op)
-            a, _, _ = sess.run([self.next_action, self.hist_op, self.episode_op],
-                               {self.state: state, self.action: action, self.reward: reward})
+            a, _, _, s = sess.run([self.next_action, self.hist_op, self.episode_op, self.step_summary],
+                                  {self.state: state, self.action: action, self.reward: reward})
+            self.summary_writer.add_summary(s)
             return a
         return sess.run(self.next_action, {self.state: state})
 
