@@ -17,7 +17,7 @@ class DQN:
         with tf.variable_scope('q', reuse=tf.AUTO_REUSE):
             sampled_q = q_fn(states, is_training=True)
         _q = tf.gather_nd(sampled_q, tf.stack([tf.range(batch_size), actions], 1))
-        loss = tf.square(target_q - _q)
+        loss = tf.losses.huber_loss(target_q, _q)
         return {'q': sampled_q,        # [N,num_actions]
                 'target_q': target_q,  # [N]
                 'loss': loss}          # [N]
@@ -48,7 +48,7 @@ if __name__=='__main__':
     LEARNING_RATE = 0.00001
     TRAIN_INTERVAL = 8
     IMAGE_SIZE = [84,84]
-    HISTORY_SIZE = 100000
+    HISTORY_SIZE = 20000
 
     if 'DISPLAY' in os.environ and os.environ['DISPLAY']:
         import cv2
