@@ -97,7 +97,6 @@ if __name__=='__main__':
         if done:
             print 'Episode done.'
         if count % TRAIN_INTERVAL == 0:
-            print sess.run(history.history_count)
             if sess.run(history.history_count) >= BATCH_SIZE:
                 _, loss_val, summary, step = sess.run([train_op, loss, train_summary, global_step])
                 summary_writer.add_summary(summary, step)

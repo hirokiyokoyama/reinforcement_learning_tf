@@ -110,7 +110,7 @@ class GymExecutor:
         _, self._next_action, step_summary, total_step, _ = sess.run(fetch_list, feed_dict)
         self._summary_writer.add_summary(step_summary, total_step)
         if done:
-            episode_summary, episode_count = sess.run([self._episode_summary, self._episode_count])
+            episode_summary, episode_count = sess.run([self._episode_summary, self.episode_count])
             self._summary_writer.add_summary(episode_summary, episode_count)
         self._new_episode = done
         return state, action, reward, done
