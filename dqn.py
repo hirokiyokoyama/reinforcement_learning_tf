@@ -2,110 +2,40 @@ import tensorflow as tf
 import numpy as np
 
 class DQN:
-    def __init__(self, q_fn, state_shape,
-                 summary_writer = None,
+    def __init__(self, q_fn,
                  history_size=5000,
-                 batch_size=32,
-                 learning_rate=0.0001,
-                 gamma=0.995):
-        self.learning_rate = learning_rate
+                 gamma=0.995,
+                 temperature=1.):
         self.gamma = gamma
-        self.batch_size = batch_size
-        if summary_writer is None:
-            summary_writer = tf.summary.FileWriter('/tmp/DQN')
-        self.summary_writer = summary_writer
+        self.temperature = temperature
 
-        self.global_step = tf.Variable(0, trainable=False)
-        self.episode_step = tf.Variable(0, trainable=False)
-        self.trained_episodes = tf.Variable(0, trainable=False)
-        self.episode_reward = tf.Variable(0., trainable=False)
-        self.init_episode_op = tf.group([self.episode_reward.assign(0.),
-                                         self.episode_step.assign(0),
-                                         self.trained_episodes.assign_add(1)])
-        self.episode_summary = tf.summary.merge([tf.summary.scalar('episode_reward', self.episode_reward),
-                                                 tf.summary.scalar('episode_steps', self.episode_step)])
-        
-        self.state_history = tf.Variable(tf.zeros([history_size]+list(state_shape), dtype=tf.float32),
-                                         trainable = False, collections=['history'])
-        self.action_history = tf.Variable(-tf.ones([history_size], dtype=tf.int32),
-                                          trainable = False, collections=['history'])
-        self.reward_history = tf.Variable(tf.zeros([history_size], dtype=tf.float32),
-                                          trainable = False, collections=['history'])
-        self.history_mask = tf.greater_equal(self.action_history, 0)
-        self.history_count = tf.reduce_sum(tf.cast(self.history_mask, tf.int32))
-        self.history_pointer = tf.Variable(tf.constant(0, dtype=tf.int32),
-                                           trainable = False,  collections=['history'])
-        self.history_saver = tf.train.Saver(var_list=tf.get_collection('history'))
-        self.history_initializer = tf.group(map(lambda v: v.initializer, tf.get_collection('history')))
-
-        history_inds = tf.random_shuffle(tf.where(self.history_mask)[:,0])[:batch_size]
-        sampled_states = tf.gather(self.state_history, (history_inds-1) % history_size)
-        sampled_actions = tf.gather(self.action_history, history_inds)
-        sampled_rewards = tf.gather(self.reward_history, history_inds)
-        sampled_next_states = tf.gather(self.state_history, history_inds)
-        with tf.variable_scope('q', reuse=False):
-            target_q = q_fn(sampled_next_states, is_training=False)
-        target_q = sampled_rewards + self.gamma * tf.reduce_max(target_q, 1)
+    def train(self, states, actions, rewards, next_states):
+        batch_size = tf.shape(actions)[0]
+        with tf.variable_scope('q', reuse=tf.AUTO_REUSE):
+            target_q = q_fn(next_states, is_training=False)
+        target_q = (1-self.gamma) * rewards + self.gamma * tf.reduce_max(target_q, 1)
         target_q = tf.stop_gradient(target_q)
-        with tf.variable_scope('q', reuse=True):
-            _q = q_fn(sampled_states, is_training=True)
-        __q = tf.gather_nd(_q, tf.stack([tf.range(batch_size), sampled_actions], 1))
-        self.loss = tf.reduce_mean(tf.square(target_q - __q))
-        self.train_summary = tf.summary.merge([tf.summary.histogram('Q', _q),
-                                               tf.summary.scalar('loss', self.loss)])
-        opt = tf.train.GradientDescentOptimizer(self.learning_rate)
-        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-        with tf.control_dependencies(update_ops):
-            self.train_op = opt.minimize(self.loss, global_step=self.global_step)
+        with tf.variable_scope('q', reuse=tf.AUTO_REUSE):
+            sampled_q = q_fn(states, is_training=True)
+        _q = tf.gather_nd(sampled_q, tf.stack([tf.range(batch_size), actions], 1))
+        loss = tf.square(target_q - _q)
+        return {'q': sampled_q,        # [N,num_actions]
+                'target_q': target_q,  # [N]
+                'loss': loss}          # [N]
 
-        self.state = tf.placeholder(tf.float32, shape=state_shape)
-        self.action = tf.placeholder(tf.int32, shape=[])
-        self.reward = tf.placeholder(tf.float32, shape=[]) 
-        self.episode_op = tf.group([self.episode_step.assign_add(1),
-                                    self.episode_reward.assign_add(self.reward)])
-       
-        hist_ops = []
-        hist_ops.append(self.state_history[self.history_pointer].assign(self.state))
-        hist_ops.append(self.action_history[self.history_pointer].assign(self.action))
-        hist_ops.append(self.reward_history[self.history_pointer].assign(self.reward))
-        with tf.control_dependencies(hist_ops):
-            self.hist_op = self.history_pointer.assign((self.history_pointer + 1) % history_size)
-
-        with tf.variable_scope('q', reuse=True):
-            q = q_fn(tf.expand_dims(self.state, 0), is_training=False)
-        probs = tf.nn.softmax(q)[0]
-        self.step_summary = tf.summary.merge([tf.summary.scalar('max_prob', tf.reduce_max(probs)),
-                                              tf.summary.scalar('min_prob', tf.reduce_min(probs))])
-        self.next_action = tf.distributions.Categorical(probs=probs).sample()
-
-    def init_episode(self, sess, state):
-        return self.step(sess, state, -1, 0.)
-    
-    def step(self, sess, state, action=None, reward=None):
-        if action is not None:
-            if action == -1:
-                s, t = sess.run([self.episode_summary, self.trained_episodes])
-                self.summary_writer.add_summary(s, t)
-                sess.run(self.init_episode_op)
-            a, _, _, s = sess.run([self.next_action, self.hist_op, self.episode_op, self.step_summary],
-                                  {self.state: state, self.action: action, self.reward: reward})
-            self.summary_writer.add_summary(s)
-            return a
-        return sess.run(self.next_action, {self.state: state})
-
-    def update(self, sess):
-        count = sess.run(self.history_count)
-        if count >= self.batch_size:
-            loss,_,s,t = sess.run([self.loss, self.train_op, self.train_summary, self.global_step])
-            self.summary_writer.add_summary(s, t)
-            return loss
-        else:
-            return None
+    def action(self, state):
+        with tf.variable_scope('q', reuse=tf.AUTO_REUSE):
+            q = q_fn(tf.expand_dims(state, 0), is_training=False)
+        probs = tf.nn.softmax(q/self.temperature)[0]
+        return {'q': q,
+                'action_probabilities': probs,
+                'action': tf.distributions.Categorical(probs=probs).sample()}
 
 if __name__=='__main__':
     import gym
     import os
     from nets import atari_cnn
+    from replay import ExperienceHistory, GymExecutor
 
     DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
     MODEL_DIR = os.path.join(DATA_DIR, 'model')
@@ -114,6 +44,10 @@ if __name__=='__main__':
         os.mkdir(DATA_DIR)
     if not os.path.exists(MODEL_DIR):
         os.mkdir(MODEL_DIR)
+
+    BATCH_SIZE = 32
+    LEARNING_RATE = 0.00001
+    TRAIN_INTERVAL = 8
 
     if 'DISPLAY' in os.environ and os.environ['DISPLAY']:
         import cv2
@@ -125,9 +59,26 @@ if __name__=='__main__':
 
     env = gym.make('SpaceInvaders-v0')
     def q_fn(x, is_training=True):
-        return atari_cnn(x, num_classes=env.action_space.n, is_training=is_training)/10.
-    dqn = DQN(q_fn, env.observation_space.shape,
-              summary_writer=tf.summary.FileWriter(LOG_DIR))
+        return atari_cnn(x, num_classes=env.action_space.n, is_training=is_training)
+    summary_writer = tf.summary.FileWriter(LOG_DIR)
+    dqn = DQN(q_fn)
+    def action_fn(state):
+        out = dqn.action(state)
+        return out['action_probabilities'], out['action']
+    history = ExperienceHistory(env.observation_space.shape)
+    executor = GymExecutor(env, action_fn, history, summary_writer=summary_writer)
+
+    global_step = tf.Variable(0, trainable=False)
+    out = dqn.train(*history.sample(BATCH_SIZE))
+    loss = tf.reduce_mean(out['loss'])
+    q = out['q']
+    opt = tf.train.GradientDescentOptimizer(LEARNING_RATE)
+    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    with tf.control_dependencies(update_ops):
+        train_op = opt.minimize(loss, global_step=global_step)
+
+    train_summary = tf.summary.merge([tf.summary.histogram('Q', q),
+                                      tf.summary.scalar('loss', loss)])
 
     sess = tf.Session()
     saver = tf.train.Saver()
@@ -136,21 +87,21 @@ if __name__=='__main__':
         saver.restore(sess, latest_ckpt)
     else:
         sess.run(tf.global_variables_initializer())
-    sess.run(dqn.history_initializer)
+    executor.initialize(sess)
 
     count = 0
     while True:
-        state = env.reset()/255.
+        count += 1
+        state, action, reward, done = executor.step(sess)
         show(state)
-        done = False
-        action = dqn.init_episode(sess, state)
-        while not done:
-            state, reward, done, meta = env.step(action)
-            state = state/255.
-            reward = reward/100.
-            action = dqn.step(sess, state, action, reward)
-            if count % 8 == 0:
-                loss = dqn.update(sess)
-            show(state)
-            count += 1
-        saver.save(sess, os.path.join(MODEL_DIR, 'model.ckpt'), global_step=dqn.global_step)
+        if done:
+            print 'Episode done.'
+        if count % TRAIN_INTERVAL == 0:
+            print sess.run(history.history_count)
+            if sess.run(history.history_count) >= BATCH_SIZE:
+                _, loss_val, summary, step = sess.run([train_op, loss, train_summary, global_step])
+                summary_writer.add_summary(summary, step)
+                print 'loss = ', loss_val
+            
+                if step % 1000 == 0:
+                    saver.save(sess, os.path.join(MODEL_DIR, 'model.ckpt'), global_step=global_step)
