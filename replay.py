@@ -2,7 +2,7 @@ import tensorflow as tf
 
 class ExperienceHistory:
     def __init__(self, state_shape,
-                 history_size = 5000,
+                 history_size = 100000,
                  variable_collections=['history']):
         variables = []
         self._state_shape = state_shape

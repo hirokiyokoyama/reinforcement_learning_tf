@@ -3,7 +3,6 @@ import numpy as np
 
 class DQN:
     def __init__(self, q_fn,
-                 history_size=100000,
                  gamma=0.995,
                  temperature=1.):
         self.gamma = gamma
@@ -49,6 +48,7 @@ if __name__=='__main__':
     LEARNING_RATE = 0.00001
     TRAIN_INTERVAL = 8
     IMAGE_SIZE = [84,84]
+    HISTORY_SIZE = 100000
 
     if 'DISPLAY' in os.environ and os.environ['DISPLAY']:
         import cv2
@@ -66,7 +66,7 @@ if __name__=='__main__':
     def action_fn(state):
         out = dqn.action(state)
         return out['action_probabilities'], out['action']
-    history = ExperienceHistory(IMAGE_SIZE+[3])
+    history = ExperienceHistory(IMAGE_SIZE+[3], history_size=HISTORY_SIZE)
     executor = GymExecutor(env, action_fn, history,
                            summary_writer=summary_writer,
                            image_size=IMAGE_SIZE)
