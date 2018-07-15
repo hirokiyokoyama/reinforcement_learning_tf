@@ -48,17 +48,20 @@ class ExperienceHistory:
 class GymExecutor:
     def __init__(self, env, action_fn, history,
                  summary_writer = None,
-                 variable_collections = ['history']):
+                 variable_collections = ['history'],
+                 image_size = (84,84)):
         self._history = history
         self._env = env
         self._new_episode = True
         self._next_action = None
+        image_size = list(image_size)
         
-        self._state_ph = tf.placeholder(tf.float32, shape=self._env.observation_space.shape)
+        self._state_ph = tf.placeholder(tf.float32, shape=[None,None,3])
+        state = tf.image.resize_images(self._state_ph, image_size)
         self._action_ph = tf.placeholder(tf.int32, shape=[])
         self._reward_ph = tf.placeholder(tf.float32, shape=[])
-        probs, self._action = action_fn(self._state_ph)
-        self._hist_op = self._history.append(self._action_ph, self._reward_ph, self._state_ph)
+        probs, self._action = action_fn(state)
+        self._hist_op = self._history.append(self._action_ph, self._reward_ph, state)
 
         if summary_writer is None:
             summary_writer = tf.summary.FileWriter('/tmp/gym')

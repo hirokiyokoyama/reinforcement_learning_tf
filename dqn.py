@@ -3,7 +3,7 @@ import numpy as np
 
 class DQN:
     def __init__(self, q_fn,
-                 history_size=5000,
+                 history_size=100000,
                  gamma=0.995,
                  temperature=1.):
         self.gamma = gamma
@@ -34,7 +34,7 @@ class DQN:
 if __name__=='__main__':
     import gym
     import os
-    from nets import atari_cnn
+    from nets import cnn
     from replay import ExperienceHistory, GymExecutor
 
     DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
@@ -48,6 +48,7 @@ if __name__=='__main__':
     BATCH_SIZE = 32
     LEARNING_RATE = 0.00001
     TRAIN_INTERVAL = 8
+    IMAGE_SIZE = [84,84]
 
     if 'DISPLAY' in os.environ and os.environ['DISPLAY']:
         import cv2
@@ -59,14 +60,16 @@ if __name__=='__main__':
 
     env = gym.make('SpaceInvaders-v0')
     def q_fn(x, is_training=True):
-        return atari_cnn(x, num_classes=env.action_space.n, is_training=is_training)
+        return cnn(x, num_classes=env.action_space.n, is_training=is_training)
     summary_writer = tf.summary.FileWriter(LOG_DIR)
     dqn = DQN(q_fn)
     def action_fn(state):
         out = dqn.action(state)
         return out['action_probabilities'], out['action']
-    history = ExperienceHistory(env.observation_space.shape)
-    executor = GymExecutor(env, action_fn, history, summary_writer=summary_writer)
+    history = ExperienceHistory(IMAGE_SIZE+[3])
+    executor = GymExecutor(env, action_fn, history,
+                           summary_writer=summary_writer,
+                           image_size=IMAGE_SIZE)
 
     global_step = tf.Variable(0, trainable=False)
     out = dqn.train(*history.sample(BATCH_SIZE))
@@ -97,7 +100,7 @@ if __name__=='__main__':
         if done:
             print 'Episode done.'
         if count % TRAIN_INTERVAL == 0:
-            if sess.run(history.history_count) >= BATCH_SIZE:
+            if sess.run(history.history_count) >= 10000:
                 _, loss_val, summary, step = sess.run([train_op, loss, train_summary, global_step])
                 summary_writer.add_summary(summary, step)
                 print 'loss = ', loss_val
