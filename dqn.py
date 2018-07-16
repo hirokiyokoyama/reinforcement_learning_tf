@@ -10,17 +10,28 @@ class DQN:
 
     def train(self, states, actions, rewards, next_states):
         batch_size = tf.shape(actions)[0]
-        with tf.variable_scope('q', reuse=tf.AUTO_REUSE):
+        with tf.variable_scope('target_q'):
             target_q = q_fn(next_states, is_training=False)
         target_q = (1-self.gamma) * rewards + self.gamma * tf.reduce_max(target_q, 1)
         target_q = tf.stop_gradient(target_q)
         with tf.variable_scope('q', reuse=tf.AUTO_REUSE):
-            sampled_q = q_fn(states, is_training=True)
-        _q = tf.gather_nd(sampled_q, tf.stack([tf.range(batch_size), actions], 1))
+            q = q_fn(states, is_training=True)
+        _q = tf.gather_nd(q, tf.stack([tf.range(batch_size), actions], 1))
         loss = tf.losses.huber_loss(target_q, _q)
-        return {'q': sampled_q,        # [N,num_actions]
+
+        all_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+        q_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='q/')
+        target_q_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='target_q/')
+        q_dict = {v.op.name:v for v in q_vars}
+        copy_ops = [v.assign(q_dict[v.op.name.replace('target_q/', 'q/')]) for v in target_q_vars]
+        copy_op = tf.group(copy_ops)
+        
+        return {'q': q,                # [N,num_actions]
                 'target_q': target_q,  # [N]
-                'loss': loss}          # [N]
+                'loss': loss,          # [N]
+                'copy_op': copy_op,
+                'q_variables': q_vars,
+                'target_q_variables': target_q_vars}
 
     def action(self, state):
         with tf.variable_scope('q', reuse=tf.AUTO_REUSE):
@@ -47,6 +58,7 @@ if __name__=='__main__':
     BATCH_SIZE = 32
     LEARNING_RATE = 0.00001
     TRAIN_INTERVAL = 8
+    COPY_INTERVAL = 256
     IMAGE_SIZE = [84,84]
     HISTORY_SIZE = 20000
 
@@ -75,6 +87,8 @@ if __name__=='__main__':
     out = dqn.train(*history.sample(BATCH_SIZE))
     loss = tf.reduce_mean(out['loss'])
     q = out['q']
+    copy_op = out['copy_op']
+    vars_to_save = list(set(tf.global_variables())-set(out['target_q_variables']))
     opt = tf.train.GradientDescentOptimizer(LEARNING_RATE)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(update_ops):
@@ -84,7 +98,7 @@ if __name__=='__main__':
                                       tf.summary.scalar('loss', loss)])
 
     sess = tf.Session()
-    saver = tf.train.Saver()
+    saver = tf.train.Saver(vars_to_save)
     latest_ckpt = tf.train.latest_checkpoint(MODEL_DIR)
     if latest_ckpt is not None:
         saver.restore(sess, latest_ckpt)
@@ -107,3 +121,5 @@ if __name__=='__main__':
             
                 if step % 1000 == 0:
                     saver.save(sess, os.path.join(MODEL_DIR, 'model.ckpt'), global_step=global_step)
+        if count % COPY_INTERVAL == 0:
+            sess.run(copy_op)
