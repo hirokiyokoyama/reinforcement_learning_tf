@@ -3,7 +3,7 @@ import numpy as np
 
 class DQN:
     def __init__(self, q_fn,
-                 gamma=0.995,
+                 gamma=0.95,
                  temperature=1.):
         self.gamma = gamma
         self.temperature = temperature
@@ -58,10 +58,12 @@ if __name__=='__main__':
         os.mkdir(MODEL_DIR)
 
     BATCH_SIZE = 32
-    LEARNING_RATE = 0.00001
+    LEARNING_RATE = 0.0001
     TRAIN_INTERVAL = 8
     COPY_INTERVAL = 256
     IMAGE_SIZE = [84,84]
+    GAMMA = 0.95
+    TEMPERATURE = 1.
     HISTORY_SIZE = 20000
 
     if 'DISPLAY' in os.environ and os.environ['DISPLAY']:
@@ -76,7 +78,7 @@ if __name__=='__main__':
     def q_fn(x, is_training=True):
         return cnn(x, num_classes=env.action_space.n, is_training=is_training)
     summary_writer = tf.summary.FileWriter(LOG_DIR)
-    dqn = DQN(q_fn)
+    dqn = DQN(q_fn, gamma=GAMMA, temperature=TEMPERATURE)
     def action_fn(state):
         out = dqn.action(state)
         return out['action_probabilities'], out['action']
