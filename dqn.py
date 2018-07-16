@@ -12,7 +12,9 @@ class DQN:
         batch_size = tf.shape(actions)[0]
         with tf.variable_scope('target_q'):
             target_q = q_fn(next_states, is_training=False)
-        target_q = (1-self.gamma) * rewards + self.gamma * tf.reduce_max(target_q, 1)
+        target_q = tf.reduce_max(target_q, 1)
+        target_q = tf.where(tf.less(actions, 0), tf.zeros_like(target_q), target_q)
+        target_q = (1-self.gamma) * rewards + self.gamma * target_q
         target_q = tf.stop_gradient(target_q)
         with tf.variable_scope('q', reuse=tf.AUTO_REUSE):
             q = q_fn(states, is_training=True)
