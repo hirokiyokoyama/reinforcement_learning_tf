@@ -47,8 +47,8 @@ def atari_cnn(x, num_classes=6, is_training=True):
     return net
 
 # input shape: [None,84,84,3]
-def cnn(x, num_classes=6, is_training=True):
-    batch_norm_params = {'decay': 0.0005, 'epsilon': 0.00001,
+def cnn(x, num_classes=6, decay=0.995, is_training=True):
+    batch_norm_params = {'decay': decay, 'epsilon': 0.00001,
                          'center': True, 'scale': True}
     with slim.arg_scope([slim.conv2d], stride=1, padding='SAME',
                         activation_fn=tf.nn.relu, normalizer_fn=slim.batch_norm):

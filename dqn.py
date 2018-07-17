@@ -65,6 +65,7 @@ if __name__=='__main__':
     GAMMA = 0.95
     TEMPERATURE = 1.
     HISTORY_SIZE = 20000
+    BATCH_NORM_DECAY = 0.995
 
     if 'DISPLAY' in os.environ and os.environ['DISPLAY']:
         import cv2
@@ -76,7 +77,9 @@ if __name__=='__main__':
 
     env = gym.make('SpaceInvaders-v0')
     def q_fn(x, is_training=True):
-        return cnn(x, num_classes=env.action_space.n, is_training=is_training)
+        return cnn(x, num_classes=env.action_space.n,
+                   is_training = is_training,
+                   decay = BATCH_NORM_DECAY)
     summary_writer = tf.summary.FileWriter(LOG_DIR)
     dqn = DQN(q_fn, gamma=GAMMA, temperature=TEMPERATURE)
     def action_fn(state):
