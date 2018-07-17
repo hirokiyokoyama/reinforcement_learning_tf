@@ -34,15 +34,15 @@ class QLearning:
                 'q_variables': q_vars,
                 'target_q_variables': target_q_vars}
 
-    def action(self, state, is_training=False):
+    def action(self, states, is_training=False):
         with tf.variable_scope('q', reuse=tf.AUTO_REUSE):
-            q = self._q_fn(tf.expand_dims(state, 0), is_training=is_training)
-        probs = self._prob_fn(q)[0]
+            q = self._q_fn(states, is_training=is_training)
+        probs = self._prob_fn(q)
         return {'q': q,
                 'action_probabilities': probs,
-                'action': tf.distributions.Categorical(probs=probs).sample()}
+                'actions': tf.distributions.Categorical(probs=probs).sample()}
 
-def boltzman(q, temperature=1.):
+def boltzmann(q, temperature=1.):
     return tf.nn.softmax(q/temperature)
 
 def epsilon_greedy(q, eps=0.1):
@@ -70,10 +70,12 @@ if __name__=='__main__':
     global_step = tf.Variable(0, trainable=False)
 
     ATARI = True
+    ENV_NAME = 'SpaceInvaders-v0' #'Breakout-v0', 'CartPole-v1'
     BATCH_SIZE = 32
     LEARNING_RATE = 0.001
     TRAIN_INTERVAL = 8
-    COPY_INTERVAL = 20000
+    COPY_INTERVAL = 2500
+    SAVE_INTERVAL = 100
     IMAGE_SIZE = [84,84]
     FRAME_SKIP = 4
     GAMMA = 0.95
@@ -88,11 +90,7 @@ if __name__=='__main__':
     else:
         show = lambda: None
 
-    if ATARI:
-        env = gym.make('SpaceInvaders-v0')
-        #env = gym.make('Breakout-v0')
-    else:
-        env = gym.make('CartPole-v1')
+    env = gym.make(ENV_NAME)
 
     if ATARI:
         def q_fn(x, is_training=True):
@@ -131,8 +129,8 @@ if __name__=='__main__':
                                       tf.summary.scalar('loss', loss)])
     
     def action_fn(state):
-        out = dqn.action(state, is_training=True)
-        return out['action_probabilities'], out['action']
+        out = dqn.action(tf.expand_dims(state,0), is_training=True)
+        return out['action_probabilities'][0], out['actions'][0]
     if ATARI:
         def preprocess_obs(x):
             x = tf.cast(x, tf.float32)/255.
@@ -153,11 +151,12 @@ if __name__=='__main__':
     sess = tf.Session()
     vars_to_save = list(set(tf.global_variables())-set(target_q_variables))
     saver = tf.train.Saver(vars_to_save)
-    latest_ckpt = tf.train.latest_checkpoint(MODEL_DIR)
+    latest_ckpt = tf.train.latest_checkpoint(MODEL_DIR, latest_filename=ENV_NAME)
     if latest_ckpt is not None:
         saver.restore(sess, latest_ckpt)
     else:
         sess.run(tf.global_variables_initializer())
+    sess.run(copy_op)
     executor.initialize(sess)
 
     count = 0
@@ -166,14 +165,16 @@ if __name__=='__main__':
         show()
         if done:
             print 'Episode done.'
-        if count % COPY_INTERVAL == 0:
-            sess.run(copy_op)
+
         if count % TRAIN_INTERVAL == 0:
             if sess.run(history.history_count) >= MIN_HISTORY_SIZE:
                 _, loss_val, summary, step = sess.run([train_op, loss, train_summary, global_step])
                 summary_writer.add_summary(summary, step)
                 print 'loss = ', loss_val
-            
-                if step % 1000 == 0:
-                    saver.save(sess, os.path.join(MODEL_DIR, 'model.ckpt'), global_step=global_step)
+                if step % COPY_INTERVAL == 0:
+                    sess.run(copy_op)
+                if step % SAVE_INTERVAL == 0:
+                    saver.save(sess, os.path.join(MODEL_DIR, ENV_NAME),
+                               global_step=global_step,
+                               latest_filename=ENV_NAME)
         count += 1

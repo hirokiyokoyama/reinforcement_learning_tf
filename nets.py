@@ -3,7 +3,7 @@ slim = tf.contrib.slim
 
 # input shape: [None,210,160,3]
 def atari_cnn(x, num_classes=6, is_training=True):
-    batch_norm_params = {'decay': 0.0005, 'epsilon': 0.00001,
+    batch_norm_params = {'decay': 0.995, 'epsilon': 0.00001,
                          'center': True, 'scale': True}
     with slim.arg_scope([slim.conv2d], stride=1, padding='SAME',
                         activation_fn=tf.nn.relu, normalizer_fn=slim.batch_norm):
