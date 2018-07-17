@@ -11,7 +11,7 @@ class DQN:
     def train(self, states, actions, rewards, next_states):
         batch_size = tf.shape(actions)[0]
         with tf.variable_scope('target_q'):
-            target_q = q_fn(next_states, is_training=False)
+            target_q = q_fn(next_states, is_training=True)
         _target_q = tf.reduce_max(target_q, 1)
         _target_q = tf.where(tf.less(actions, 0), tf.zeros_like(_target_q), _target_q)
         _target_q = (1-self.gamma) * rewards + self.gamma * _target_q
@@ -27,15 +27,11 @@ class DQN:
         q_dict = {v.op.name:v for v in q_vars}
         ops = [v.assign(q_dict[v.op.name.replace('target_q/', 'q/')]) for v in target_q_vars]
         copy_op = tf.group(ops)
-        ops = [v.assign(q_dict[v.op.name.replace('target_q/', 'q/')]) for v in target_q_vars \
-               if 'moving_mean' in v.name or 'moving_variance' in v.name]
-        copy_moving_average_op = tf.group(ops)
         
         return {'q': q,                # [N,num_actions]
                 'target_q': target_q,  # [N]
                 'loss': loss,          # [N]
                 'copy_op': copy_op,
-                'copy_moving_average_op': copy_moving_average_op,
                 'q_variables': q_vars,
                 'target_q_variables': target_q_vars}
 
@@ -129,7 +125,6 @@ if __name__=='__main__':
         if count % COPY_INTERVAL == 0:
             sess.run(copy_op)
         if count % TRAIN_INTERVAL == 0:
-            sess.run(copy_moving_average_op)
             if sess.run(history.history_count) >= 10000:
                 _, loss_val, summary, step = sess.run([train_op, loss, train_summary, global_step])
                 summary_writer.add_summary(summary, step)
