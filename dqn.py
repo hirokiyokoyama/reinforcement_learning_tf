@@ -88,12 +88,11 @@ if __name__=='__main__':
     q = out['q']
     target_q = out['target_q']
     copy_op = out['copy_op']
-    vars_to_save = list(set(tf.global_variables())-set(out['target_q_variables']))
+    target_q_variables = out['target_q_variables']
     # this must be before calling action_fn: to avoid updating moving averages of executor
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     global_step = tf.Variable(0, trainable=False)
     opt = tf.train.GradientDescentOptimizer(LEARNING_RATE)
-    print update_ops
     with tf.control_dependencies(update_ops):
         train_op = opt.minimize(loss, global_step=global_step)
 
@@ -109,6 +108,7 @@ if __name__=='__main__':
                            image_size=IMAGE_SIZE)
 
     sess = tf.Session()
+    vars_to_save = list(set(tf.global_variables())-set(target_q_variables))
     saver = tf.train.Saver(vars_to_save)
     latest_ckpt = tf.train.latest_checkpoint(MODEL_DIR)
     if latest_ckpt is not None:
