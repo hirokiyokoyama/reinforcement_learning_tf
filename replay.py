@@ -45,7 +45,8 @@ class ExperienceHistory:
         return states, actions, rewards, next_states, terminal
 
 class GymExecutor:
-    def __init__(self, env, action_fn, history,
+    def __init__(self, env, action_fn,
+                 history = None,
                  summary_writer = None,
                  variable_collections = ['history'],
                  frame_skip = 4,
@@ -62,7 +63,10 @@ class GymExecutor:
         self._reward_ph = tf.placeholder(tf.float32, shape=[])
         reward = preprocess_reward_fn(self._reward_ph)
         probs, self._action = action_fn(state)
-        self._hist_op = self._history.append(state, self._action_ph, reward)
+        if self._history is not None:
+            self._hist_op = self._history.append(state, self._action_ph, reward)
+        else:
+            self._hist_op = tf.no_op()
 
         if summary_writer is None:
             summary_writer = tf.summary.FileWriter('/tmp/gym')
@@ -88,7 +92,10 @@ class GymExecutor:
         self._episode_summary = tf.summary.merge([tf.summary.scalar('episode_reward', self.episode_reward),
                                                   tf.summary.scalar('episode_steps', self.episode_step)])
 
-        self._init_op = tf.group([self._history.initializer]+map(lambda v: v.initializer, variables))
+        ops = map(lambda v: v.initializer, variables)
+        if self._history is not None:
+            ops += [self._history.initializer]
+        self._init_op = tf.group(ops)
 
     def initialize(self, sess):
         sess.run(self._init_op)

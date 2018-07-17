@@ -56,6 +56,7 @@ def epsilon_greedy(q, eps=0.1):
 if __name__=='__main__':
     import gym
     import os
+    import sys
     from nets import cnn
     from replay import ExperienceHistory, GymExecutor
 
@@ -69,13 +70,19 @@ if __name__=='__main__':
 
     global_step = tf.Variable(0, trainable=False)
 
+    if len(sys.argv) > 1 and sys.argv[1] == 'test':
+        TRAIN = False
+        print 'Test mode.'
+    else:
+        TRAIN = True
+        print 'Training mode.'
     ATARI = True
     ENV_NAME = 'SpaceInvaders-v0' #'Breakout-v0', 'CartPole-v1'
     BATCH_SIZE = 32
     LEARNING_RATE = 0.001
     TRAIN_INTERVAL = 8
     COPY_INTERVAL = 2500
-    SAVE_INTERVAL = 100
+    SAVE_INTERVAL = 1000
     IMAGE_SIZE = [84,84]
     FRAME_SKIP = 4
     GAMMA = 0.95
@@ -105,31 +112,36 @@ if __name__=='__main__':
             return tf.matmul(x, w) + b
     summary_writer = tf.summary.FileWriter(LOG_DIR)
     dqn = QLearning(q_fn, PROB_FN, gamma=GAMMA)
-    if ATARI:
-        history = ExperienceHistory(IMAGE_SIZE+[FRAME_SKIP],
-                                    history_size=HISTORY_SIZE)
-    else:
-        dim = np.prod(env.observation_space.shape)
-        history = ExperienceHistory([FRAME_SKIP*dim],
-                                    history_size=HISTORY_SIZE)
-    out = dqn.train(*history.sample(BATCH_SIZE))
-    loss = tf.reduce_mean(out['loss'])
-    q = out['q']
-    target_q = out['target_q']
-    copy_op = out['copy_op']
-    target_q_variables = out['target_q_variables']
-    # this must be before calling action_fn: to avoid updating moving averages of executor
-    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-    opt = tf.train.GradientDescentOptimizer(LEARNING_RATE)
-    with tf.control_dependencies(update_ops):
-        train_op = opt.minimize(loss, global_step=global_step)
 
-    train_summary = tf.summary.merge([tf.summary.histogram('Q', q),
-                                      tf.summary.histogram('target_Q', target_q),
-                                      tf.summary.scalar('loss', loss)])
-    
+    history = None
+    target_q_variables = []
+    if TRAIN:
+        if ATARI:
+            history = ExperienceHistory(IMAGE_SIZE+[FRAME_SKIP],
+                                        history_size=HISTORY_SIZE)
+        else:
+            dim = np.prod(env.observation_space.shape)
+            history = ExperienceHistory([FRAME_SKIP*dim],
+                                        history_size=HISTORY_SIZE)
+            
+        out = dqn.train(*history.sample(BATCH_SIZE))
+        loss = tf.reduce_mean(out['loss'])
+        q = out['q']
+        target_q = out['target_q']
+        copy_op = out['copy_op']
+        target_q_variables = out['target_q_variables']
+        # this must be before calling action_fn: to avoid updating moving averages of executor
+        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        opt = tf.train.GradientDescentOptimizer(LEARNING_RATE)
+        with tf.control_dependencies(update_ops):
+            train_op = opt.minimize(loss, global_step=global_step)
+
+        train_summary = tf.summary.merge([tf.summary.histogram('Q', q),
+                                          tf.summary.histogram('target_Q', target_q),
+                                          tf.summary.scalar('loss', loss)])
+        
     def action_fn(state):
-        out = dqn.action(tf.expand_dims(state,0), is_training=True)
+        out = dqn.action(tf.expand_dims(state,0), is_training=TRAIN)
         return out['action_probabilities'][0], out['actions'][0]
     if ATARI:
         def preprocess_obs(x):
@@ -153,10 +165,13 @@ if __name__=='__main__':
     saver = tf.train.Saver(vars_to_save)
     latest_ckpt = tf.train.latest_checkpoint(MODEL_DIR, latest_filename=ENV_NAME)
     if latest_ckpt is not None:
+        print 'Restored from %s.' % latest_ckpt
         saver.restore(sess, latest_ckpt)
     else:
+        print 'Starting with a new model.'
         sess.run(tf.global_variables_initializer())
-    sess.run(copy_op)
+    if TRAIN:
+        sess.run(copy_op)
     executor.initialize(sess)
 
     count = 0
@@ -166,7 +181,7 @@ if __name__=='__main__':
         if done:
             print 'Episode done.'
 
-        if count % TRAIN_INTERVAL == 0:
+        if TRAIN and count % TRAIN_INTERVAL == 0:
             if sess.run(history.history_count) >= MIN_HISTORY_SIZE:
                 _, loss_val, summary, step = sess.run([train_op, loss, train_summary, global_step])
                 summary_writer.add_summary(summary, step)
