@@ -1,23 +1,22 @@
 import tensorflow as tf
 import numpy as np
 
-class DQN:
-    def __init__(self, q_fn,
-                 gamma=0.95,
-                 temperature=1.):
+class QLearning:
+    def __init__(self, q_fn, prob_fn, gamma=0.95):
         self.gamma = gamma
-        self.temperature = temperature
+        self._q_fn = q_fn
+        self._prob_fn = prob_fn
 
     def train(self, states, actions, rewards, next_states, terminal):
         batch_size = tf.shape(actions)[0]
         with tf.variable_scope('target_q'):
-            target_q = q_fn(next_states, is_training=True)
+            target_q = self._q_fn(next_states, is_training=True)
         _target_q = tf.reduce_max(target_q, 1)
         _target_q = tf.where(terminal, tf.zeros_like(_target_q), _target_q)
         _target_q = (1-self.gamma) * rewards + self.gamma * _target_q
         _target_q = tf.stop_gradient(_target_q)
         with tf.variable_scope('q', reuse=tf.AUTO_REUSE):
-            q = q_fn(states, is_training=True)
+            q = self._q_fn(states, is_training=True)
         _q = tf.gather_nd(q, tf.stack([tf.range(batch_size), actions], 1))
         loss = tf.losses.huber_loss(_target_q, _q)
 
@@ -37,11 +36,22 @@ class DQN:
 
     def action(self, state, is_training=False):
         with tf.variable_scope('q', reuse=tf.AUTO_REUSE):
-            q = q_fn(tf.expand_dims(state, 0), is_training=is_training)
-        probs = tf.nn.softmax(q/self.temperature)[0]
+            q = self._q_fn(tf.expand_dims(state, 0), is_training=is_training)
+        probs = self._prob_fn(q)[0]
         return {'q': q,
                 'action_probabilities': probs,
                 'action': tf.distributions.Categorical(probs=probs).sample()}
+
+def boltzman(q, temperature=1.):
+    return tf.nn.softmax(q/temperature)
+
+def epsilon_greedy(q, eps=0.1):
+    shape = tf.shape(q)
+    n = shape[0]
+    m = shape[1]
+    inds = tf.argmax(q, 1, output_type=tf.int32)
+    subs = tf.stack([tf.range(n), inds], 1)
+    return tf.scatter_nd(subs, tf.ones([n])*(1.-eps), shape) + eps/tf.cast(m, tf.float32)
 
 if __name__=='__main__':
     import gym
@@ -57,14 +67,17 @@ if __name__=='__main__':
     if not os.path.exists(MODEL_DIR):
         os.mkdir(MODEL_DIR)
 
-    ATARI = False
+    global_step = tf.Variable(0, trainable=False)
+
+    ATARI = True
     BATCH_SIZE = 32
     LEARNING_RATE = 0.001
     TRAIN_INTERVAL = 8
     COPY_INTERVAL = 40000
     IMAGE_SIZE = [84,84]
+    FRAME_SKIP = 4
     GAMMA = 0.95
-    TEMPERATURE = 1.
+    PROB_FN = lambda q: epsilon_greedy(q, tf.train.exponential_decay(1., global_step, 1000000, 0.01)+0.1)
     HISTORY_SIZE = 20000
     BATCH_NORM_DECAY = 0.999
 
@@ -86,15 +99,19 @@ if __name__=='__main__':
                        decay = BATCH_NORM_DECAY)
     else:
         def q_fn(x, is_training=True):
-            w = tf.Variable(tf.truncated_normal(env.observation_space.shape+(env.action_space.n,)))
+            dim = np.prod(env.observation_space.shape)
+            w = tf.Variable(tf.truncated_normal([FRAME_SKIP*dim, env.action_space.n]))
             b = tf.Variable(tf.zeros([1, env.action_space.n]))
             return tf.matmul(x, w) + b
     summary_writer = tf.summary.FileWriter(LOG_DIR)
-    dqn = DQN(q_fn, gamma=GAMMA, temperature=TEMPERATURE)
+    dqn = QLearning(q_fn, PROB_FN, gamma=GAMMA)
     if ATARI:
-        history = ExperienceHistory(IMAGE_SIZE+[3], history_size=HISTORY_SIZE)
+        history = ExperienceHistory(IMAGE_SIZE+[FRAME_SKIP],
+                                    history_size=HISTORY_SIZE)
     else:
-        history = ExperienceHistory(env.observation_space.shape, history_size=HISTORY_SIZE)
+        dim = np.prod(env.observation_space.shape)
+        history = ExperienceHistory([FRAME_SKIP*dim],
+                                    history_size=HISTORY_SIZE)
     out = dqn.train(*history.sample(BATCH_SIZE))
     loss = tf.reduce_mean(out['loss'])
     q = out['q']
@@ -103,7 +120,6 @@ if __name__=='__main__':
     target_q_variables = out['target_q_variables']
     # this must be before calling action_fn: to avoid updating moving averages of executor
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-    global_step = tf.Variable(0, trainable=False)
     opt = tf.train.GradientDescentOptimizer(LEARNING_RATE)
     with tf.control_dependencies(update_ops):
         train_op = opt.minimize(loss, global_step=global_step)
@@ -118,14 +134,17 @@ if __name__=='__main__':
     if ATARI:
         def preprocess_obs(x):
             x = tf.cast(x, tf.float32)/255.
-            x.set_shape(env.observation_space.shape)
-            return tf.image.resize_images(x, IMAGE_SIZE)
+            x.set_shape((FRAME_SKIP,)+env.observation_space.shape)
+            x = tf.image.resize_images(x, IMAGE_SIZE)
+            x = tf.reduce_mean(x, 3)
+            return tf.transpose(x, [1,2,0])
         preprocess_reward = lambda x: x/100.
     else:
-        preprocess_obs = lambda x: x
+        preprocess_obs = lambda x: tf.reshape(x, [-1])
         preprocess_reward = lambda x: x
     executor = GymExecutor(env, action_fn, history,
                            summary_writer=summary_writer,
+                           frame_skip = FRAME_SKIP,
                            preprocess_observation_fn=preprocess_obs,
                            preprocess_reward_fn=preprocess_reward)
 

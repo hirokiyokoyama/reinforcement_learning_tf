@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 
 class ExperienceHistory:
     def __init__(self, state_shape,
@@ -47,11 +48,13 @@ class GymExecutor:
     def __init__(self, env, action_fn, history,
                  summary_writer = None,
                  variable_collections = ['history'],
+                 frame_skip = 4,
                  preprocess_observation_fn = lambda x: x,
                  preprocess_reward_fn = lambda x: x):
         self._history = history
         self._env = env
         self._state_val = None
+        self._frame_skip = frame_skip
         
         self._state_ph = tf.placeholder(tf.float32)
         state = preprocess_observation_fn(self._state_ph)
@@ -93,12 +96,21 @@ class GymExecutor:
         
     def step(self, sess):
         if self._state_val is None:
-            self._state_val = self._env.reset()
+            self._state_val = np.repeat(np.expand_dims(self._env.reset(), 0), self._frame_skip, 0)
             init_or_step = self._init_episode_op
         else:
             init_or_step = self._step_op
         action = sess.run(self._action, {self._state_ph: self._state_val})
-        next_state, reward, done, _ = self._env.step(action)
+        next_states = [None]*self._frame_skip
+        rewards = [0.]*self._frame_skip
+        done = False
+        for i in range(self._frame_skip):
+            if not done:
+                next_states[i], rewards[i], done, _ = self._env.step(action)
+            else:
+                next_states[i] = next_states[i-1]
+        next_state = np.stack(next_states)
+        reward = np.mean(rewards)
         fetch_list = [self._hist_op, self._step_summary, self.total_step, init_or_step]
         feed_dict = {self._state_ph: self._state_val,
                      self._action_ph: action,
