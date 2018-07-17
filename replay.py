@@ -46,17 +46,19 @@ class GymExecutor:
     def __init__(self, env, action_fn, history,
                  summary_writer = None,
                  variable_collections = ['history'],
-                 preprocess_fn = lambda x: x):
+                 preprocess_observation_fn = lambda x: x,
+                 preprocess_reward_fn = lambda x: x):
         self._history = history
         self._env = env
         self._state_val = None
         
         self._state_ph = tf.placeholder(tf.float32)
-        state = preprocess_fn(self._state_ph)
+        state = preprocess_observation_fn(self._state_ph)
         self._action_ph = tf.placeholder(tf.int32, shape=[])
         self._reward_ph = tf.placeholder(tf.float32, shape=[])
+        reward = preprocess_reward_fn(self._reward_ph)
         probs, self._action = action_fn(state)
-        self._hist_op = self._history.append(state, self._action_ph, self._reward_ph)
+        self._hist_op = self._history.append(state, self._action_ph, reward)
 
         if summary_writer is None:
             summary_writer = tf.summary.FileWriter('/tmp/gym')
@@ -76,7 +78,7 @@ class GymExecutor:
                                           self.episode_count.assign_add(1)])
         self._step_op = tf.group([self.total_step.assign_add(1),
                                   self.episode_step.assign_add(1),
-                                  self.episode_reward.assign_add(self._reward_ph)])
+                                  self.episode_reward.assign_add(reward)])
         self._step_summary = tf.summary.merge([tf.summary.scalar('max_prob', tf.reduce_max(probs)),
                                                tf.summary.scalar('min_prob', tf.reduce_min(probs))])
         self._episode_summary = tf.summary.merge([tf.summary.scalar('episode_reward', self.episode_reward),
@@ -90,19 +92,18 @@ class GymExecutor:
         
     def step(self, sess):
         if self._state_val is None:
-            self._state_val = self._env.reset()/255.
+            self._state_val = self._env.reset()
             init_or_step = self._init_episode_op
         else:
             init_or_step = self._step_op
         action = sess.run(self._action, {self._state_ph: self._state_val})
         next_state, reward, done, _ = self._env.step(action)
-        next_state = next_state/255.
-        reward = reward/100.
         fetch_list = [self._hist_op, self._step_summary, self.total_step, init_or_step]
         feed_dict = {self._state_ph: self._state_val,
                      self._action_ph: action,
                      self._reward_ph: reward}
         _, step_summary, total_step, _ = sess.run(fetch_list, feed_dict)
+        self._state_val = next_state
         self._summary_writer.add_summary(step_summary, total_step)
         if done:
             fetch_list = [self._hist_op, self._episode_summary, self.episode_count]

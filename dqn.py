@@ -116,14 +116,18 @@ if __name__=='__main__':
         out = dqn.action(state, is_training=True)
         return out['action_probabilities'], out['action']
     if ATARI:
-        def preprocess_fn(x):
+        def preprocess_obs(x):
+            x = tf.cast(x, tf.float32)/255.
             x.set_shape(env.observation_space.shape)
             return tf.image.resize_images(x, IMAGE_SIZE)
+        preprocess_reward = lambda x: x/100.
     else:
-        preprocess_fn = lambda x: x
+        preprocess_obs = lambda x: x
+        preprocess_reward = lambda x: x
     executor = GymExecutor(env, action_fn, history,
                            summary_writer=summary_writer,
-                           preprocess_fn=preprocess_fn)
+                           preprocess_observation_fn=preprocess_obs,
+                           preprocess_reward_fn=preprocess_reward)
 
     sess = tf.Session()
     vars_to_save = list(set(tf.global_variables())-set(target_q_variables))
