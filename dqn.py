@@ -82,29 +82,31 @@ if __name__=='__main__':
                    decay = BATCH_NORM_DECAY)
     summary_writer = tf.summary.FileWriter(LOG_DIR)
     dqn = DQN(q_fn, gamma=GAMMA, temperature=TEMPERATURE)
-    def action_fn(state):
-        out = dqn.action(state, is_training=True)
-        return out['action_probabilities'], out['action']
     history = ExperienceHistory(IMAGE_SIZE+[3], history_size=HISTORY_SIZE)
-    executor = GymExecutor(env, action_fn, history,
-                           summary_writer=summary_writer,
-                           image_size=IMAGE_SIZE)
-
-    global_step = tf.Variable(0, trainable=False)
     out = dqn.train(*history.sample(BATCH_SIZE))
     loss = tf.reduce_mean(out['loss'])
     q = out['q']
     target_q = out['target_q']
     copy_op = out['copy_op']
     vars_to_save = list(set(tf.global_variables())-set(out['target_q_variables']))
-    opt = tf.train.GradientDescentOptimizer(LEARNING_RATE)
+    # this must be before calling action_fn: to avoid updating moving averages of executor
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    global_step = tf.Variable(0, trainable=False)
+    opt = tf.train.GradientDescentOptimizer(LEARNING_RATE)
+    print update_ops
     with tf.control_dependencies(update_ops):
         train_op = opt.minimize(loss, global_step=global_step)
 
     train_summary = tf.summary.merge([tf.summary.histogram('Q', q),
                                       tf.summary.histogram('target_Q', target_q),
                                       tf.summary.scalar('loss', loss)])
+    
+    def action_fn(state):
+        out = dqn.action(state, is_training=True)
+        return out['action_probabilities'], out['action']
+    executor = GymExecutor(env, action_fn, history,
+                           summary_writer=summary_writer,
+                           image_size=IMAGE_SIZE)
 
     sess = tf.Session()
     saver = tf.train.Saver(vars_to_save)
