@@ -12,26 +12,30 @@ class DQN:
         batch_size = tf.shape(actions)[0]
         with tf.variable_scope('target_q'):
             target_q = q_fn(next_states, is_training=False)
-        target_q = tf.reduce_max(target_q, 1)
-        target_q = tf.where(tf.less(actions, 0), tf.zeros_like(target_q), target_q)
-        target_q = (1-self.gamma) * rewards + self.gamma * target_q
-        target_q = tf.stop_gradient(target_q)
+        _target_q = tf.reduce_max(target_q, 1)
+        _target_q = tf.where(tf.less(actions, 0), tf.zeros_like(_target_q), _target_q)
+        _target_q = (1-self.gamma) * rewards + self.gamma * _target_q
+        _target_q = tf.stop_gradient(_target_q)
         with tf.variable_scope('q', reuse=tf.AUTO_REUSE):
             q = q_fn(states, is_training=True)
         _q = tf.gather_nd(q, tf.stack([tf.range(batch_size), actions], 1))
-        loss = tf.losses.huber_loss(target_q, _q)
+        loss = tf.losses.huber_loss(_target_q, _q)
 
         all_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
         q_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='q/')
         target_q_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='target_q/')
         q_dict = {v.op.name:v for v in q_vars}
-        copy_ops = [v.assign(q_dict[v.op.name.replace('target_q/', 'q/')]) for v in target_q_vars]
-        copy_op = tf.group(copy_ops)
+        ops = [v.assign(q_dict[v.op.name.replace('target_q/', 'q/')]) for v in target_q_vars]
+        copy_op = tf.group(ops)
+        ops = [v.assign(q_dict[v.op.name.replace('target_q/', 'q/')]) for v in target_q_vars \
+               if 'moving_mean' in v.name or 'moving_variance' in v.name]
+        copy_moving_average_op = tf.group(ops)
         
         return {'q': q,                # [N,num_actions]
                 'target_q': target_q,  # [N]
                 'loss': loss,          # [N]
                 'copy_op': copy_op,
+                'copy_moving_average_op': copy_moving_average_op,
                 'q_variables': q_vars,
                 'target_q_variables': target_q_vars}
 
@@ -65,7 +69,7 @@ if __name__=='__main__':
     GAMMA = 0.95
     TEMPERATURE = 1.
     HISTORY_SIZE = 20000
-    BATCH_NORM_DECAY = 0.995
+    BATCH_NORM_DECAY = 0.999
 
     if 'DISPLAY' in os.environ and os.environ['DISPLAY']:
         import cv2
@@ -96,6 +100,7 @@ if __name__=='__main__':
     q = out['q']
     target_q = out['target_q']
     copy_op = out['copy_op']
+    copy_moving_average_op = out['copy_moving_average_op']
     vars_to_save = list(set(tf.global_variables())-set(out['target_q_variables']))
     opt = tf.train.GradientDescentOptimizer(LEARNING_RATE)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -124,6 +129,7 @@ if __name__=='__main__':
         if count % COPY_INTERVAL == 0:
             sess.run(copy_op)
         if count % TRAIN_INTERVAL == 0:
+            sess.run(copy_moving_average_op)
             if sess.run(history.history_count) >= 10000:
                 _, loss_val, summary, step = sess.run([train_op, loss, train_summary, global_step])
                 summary_writer.add_summary(summary, step)

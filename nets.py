@@ -10,9 +10,9 @@ def atari_cnn(x, num_classes=6, is_training=True):
       with slim.arg_scope([slim.batch_norm], is_training=is_training, **batch_norm_params):
         # [224,160]
         net = tf.pad(x, tf.constant([[0,0], [7,7], [0,0], [0,0]]), 'CONSTANT')
-        net = slim.conv2d(x, 64, [7,7])
-        net = slim.conv2d(x, 32, [1,1])
-        net = slim.conv2d(x, 64, [3,3])
+        net = slim.conv2d(net, 64, [7,7])
+        net = slim.conv2d(net, 32, [1,1])
+        net = slim.conv2d(net, 64, [3,3])
 
         # [112,80]
         net = slim.conv2d(net, 128, [3,3], stride=2)
@@ -55,8 +55,8 @@ def cnn(x, num_classes=6, decay=0.995, is_training=True):
       with slim.arg_scope([slim.batch_norm], is_training=is_training, **batch_norm_params):
         # [84,84]
         net = slim.conv2d(x, 64, [5,5])
-        net = slim.conv2d(x, 32, [1,1])
-        net = slim.conv2d(x, 64, [3,3])
+        net = slim.conv2d(net, 32, [1,1])
+        net = slim.conv2d(net, 64, [3,3])
 
         # [28,28]
         net = slim.conv2d(net, 128, [5,5], stride=3)
