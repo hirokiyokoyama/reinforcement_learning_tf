@@ -96,7 +96,6 @@ if __name__=='__main__':
     q = out['q']
     target_q = out['target_q']
     copy_op = out['copy_op']
-    copy_moving_average_op = out['copy_moving_average_op']
     vars_to_save = list(set(tf.global_variables())-set(out['target_q_variables']))
     opt = tf.train.GradientDescentOptimizer(LEARNING_RATE)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
