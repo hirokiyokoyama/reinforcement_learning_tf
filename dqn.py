@@ -8,12 +8,12 @@ class DQN:
         self.gamma = gamma
         self.temperature = temperature
 
-    def train(self, states, actions, rewards, next_states):
+    def train(self, states, actions, rewards, next_states, terminal):
         batch_size = tf.shape(actions)[0]
         with tf.variable_scope('target_q'):
             target_q = q_fn(next_states, is_training=True)
         _target_q = tf.reduce_max(target_q, 1)
-        _target_q = tf.where(tf.less(actions, 0), tf.zeros_like(_target_q), _target_q)
+        _target_q = tf.where(terminal, tf.zeros_like(_target_q), _target_q)
         _target_q = (1-self.gamma) * rewards + self.gamma * _target_q
         _target_q = tf.stop_gradient(_target_q)
         with tf.variable_scope('q', reuse=tf.AUTO_REUSE):
@@ -57,7 +57,7 @@ if __name__=='__main__':
     if not os.path.exists(MODEL_DIR):
         os.mkdir(MODEL_DIR)
 
-    ATARI = True
+    ATARI = False
     BATCH_SIZE = 32
     LEARNING_RATE = 0.001
     TRAIN_INTERVAL = 8

@@ -17,7 +17,7 @@ class ExperienceHistory:
                                            trainable = False, collections=variable_collections)
         variables.append(self._reward_history)
         
-        self._history_mask = tf.greater(self._action_history, -1000)
+        self._history_mask = tf.greater(self._action_history, -1)
         self._history_pointer = tf.Variable(tf.constant(0, dtype=tf.int32),
                                             trainable = False,  collections=variable_collections)
         variables.append(self._history_pointer)
@@ -40,7 +40,8 @@ class ExperienceHistory:
         actions = tf.gather(self._action_history, inds)
         rewards = tf.gather(self._reward_history, inds)
         next_states = tf.gather(self._state_history, (inds+1) % self._history_size)
-        return states, actions, rewards, next_states
+        terminal = tf.equal(tf.gather(self._action_hisotry, (inds+1) % self._history_size), -1)
+        return states, actions, rewards, next_states, terminal
 
 class GymExecutor:
     def __init__(self, env, action_fn, history,
