@@ -73,12 +73,13 @@ if __name__=='__main__':
     BATCH_SIZE = 32
     LEARNING_RATE = 0.001
     TRAIN_INTERVAL = 8
-    COPY_INTERVAL = 40000
+    COPY_INTERVAL = 20000
     IMAGE_SIZE = [84,84]
     FRAME_SKIP = 4
     GAMMA = 0.95
-    PROB_FN = lambda q: epsilon_greedy(q, tf.train.exponential_decay(1., global_step, 1000000, 0.01)+0.1)
+    PROB_FN = lambda q: epsilon_greedy(q, tf.train.exponential_decay(0.9, global_step, 1000000, 0.01)+0.1)
     HISTORY_SIZE = 20000
+    MIN_HISTORY_SIZE = 10000
     BATCH_NORM_DECAY = 0.999
 
     if 'DISPLAY' in os.environ and os.environ['DISPLAY']:
@@ -89,6 +90,7 @@ if __name__=='__main__':
 
     if ATARI:
         env = gym.make('SpaceInvaders-v0')
+        #env = gym.make('Breakout-v0')
     else:
         env = gym.make('CartPole-v1')
 
@@ -167,7 +169,7 @@ if __name__=='__main__':
         if count % COPY_INTERVAL == 0:
             sess.run(copy_op)
         if count % TRAIN_INTERVAL == 0:
-            if sess.run(history.history_count) >= 10000:
+            if sess.run(history.history_count) >= MIN_HISTORY_SIZE:
                 _, loss_val, summary, step = sess.run([train_op, loss, train_summary, global_step])
                 summary_writer.add_summary(summary, step)
                 print 'loss = ', loss_val
