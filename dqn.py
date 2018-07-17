@@ -58,9 +58,9 @@ if __name__=='__main__':
         os.mkdir(MODEL_DIR)
 
     BATCH_SIZE = 32
-    LEARNING_RATE = 0.0001
+    LEARNING_RATE = 0.00003
     TRAIN_INTERVAL = 8
-    COPY_INTERVAL = 256
+    COPY_INTERVAL = 40000
     IMAGE_SIZE = [84,84]
     GAMMA = 0.95
     TEMPERATURE = 1.
@@ -91,6 +91,7 @@ if __name__=='__main__':
     out = dqn.train(*history.sample(BATCH_SIZE))
     loss = tf.reduce_mean(out['loss'])
     q = out['q']
+    target_q = out['target_q']
     copy_op = out['copy_op']
     vars_to_save = list(set(tf.global_variables())-set(out['target_q_variables']))
     opt = tf.train.GradientDescentOptimizer(LEARNING_RATE)
@@ -99,6 +100,7 @@ if __name__=='__main__':
         train_op = opt.minimize(loss, global_step=global_step)
 
     train_summary = tf.summary.merge([tf.summary.histogram('Q', q),
+                                      tf.summary.histogram('target_Q', target_q),
                                       tf.summary.scalar('loss', loss)])
 
     sess = tf.Session()
@@ -112,11 +114,12 @@ if __name__=='__main__':
 
     count = 0
     while True:
-        count += 1
         state, action, reward, done = executor.step(sess)
         show(state)
         if done:
             print 'Episode done.'
+        if count % COPY_INTERVAL == 0:
+            sess.run(copy_op)
         if count % TRAIN_INTERVAL == 0:
             if sess.run(history.history_count) >= 10000:
                 _, loss_val, summary, step = sess.run([train_op, loss, train_summary, global_step])
@@ -125,5 +128,4 @@ if __name__=='__main__':
             
                 if step % 1000 == 0:
                     saver.save(sess, os.path.join(MODEL_DIR, 'model.ckpt'), global_step=global_step)
-        if count % COPY_INTERVAL == 0:
-            sess.run(copy_op)
+        count += 1
