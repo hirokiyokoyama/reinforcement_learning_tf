@@ -57,8 +57,9 @@ if __name__=='__main__':
     if not os.path.exists(MODEL_DIR):
         os.mkdir(MODEL_DIR)
 
+    ATARI = True
     BATCH_SIZE = 32
-    LEARNING_RATE = 0.00003
+    LEARNING_RATE = 0.001
     TRAIN_INTERVAL = 8
     COPY_INTERVAL = 40000
     IMAGE_SIZE = [84,84]
@@ -68,21 +69,32 @@ if __name__=='__main__':
     BATCH_NORM_DECAY = 0.999
 
     if 'DISPLAY' in os.environ and os.environ['DISPLAY']:
-        import cv2
-        def show(x):
-            cv2.imshow('State', x[:,:,::-1])
-            cv2.waitKey(1)
+        def show():
+            env.render()
     else:
-        show = lambda x: None
+        show = lambda: None
 
-    env = gym.make('SpaceInvaders-v0')
-    def q_fn(x, is_training=True):
-        return cnn(x, num_classes=env.action_space.n,
-                   is_training = is_training,
-                   decay = BATCH_NORM_DECAY)
+    if ATARI:
+        env = gym.make('SpaceInvaders-v0')
+    else:
+        env = gym.make('CartPole-v1')
+
+    if ATARI:
+        def q_fn(x, is_training=True):
+            return cnn(x, num_classes=env.action_space.n,
+                       is_training = is_training,
+                       decay = BATCH_NORM_DECAY)
+    else:
+        def q_fn(x, is_training=True):
+            w = tf.Variable(tf.truncated_normal(env.observation_space.shape+(env.action_space.n,)))
+            b = tf.Variable(tf.zeros([1, env.action_space.n]))
+            return tf.matmul(x, w) + b
     summary_writer = tf.summary.FileWriter(LOG_DIR)
     dqn = DQN(q_fn, gamma=GAMMA, temperature=TEMPERATURE)
-    history = ExperienceHistory(IMAGE_SIZE+[3], history_size=HISTORY_SIZE)
+    if ATARI:
+        history = ExperienceHistory(IMAGE_SIZE+[3], history_size=HISTORY_SIZE)
+    else:
+        history = ExperienceHistory(env.observation_space.shape, history_size=HISTORY_SIZE)
     out = dqn.train(*history.sample(BATCH_SIZE))
     loss = tf.reduce_mean(out['loss'])
     q = out['q']
@@ -103,9 +115,15 @@ if __name__=='__main__':
     def action_fn(state):
         out = dqn.action(state, is_training=True)
         return out['action_probabilities'], out['action']
+    if ATARI:
+        def preprocess_fn(x):
+            x.set_shape(env.observation_space.shape)
+            return tf.image.resize_images(x, IMAGE_SIZE)
+    else:
+        preprocess_fn = lambda x: x
     executor = GymExecutor(env, action_fn, history,
                            summary_writer=summary_writer,
-                           image_size=IMAGE_SIZE)
+                           preprocess_fn=preprocess_fn)
 
     sess = tf.Session()
     vars_to_save = list(set(tf.global_variables())-set(target_q_variables))
@@ -120,7 +138,7 @@ if __name__=='__main__':
     count = 0
     while True:
         state, action, reward, done = executor.step(sess)
-        show(state)
+        show()
         if done:
             print 'Episode done.'
         if count % COPY_INTERVAL == 0:
