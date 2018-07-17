@@ -35,9 +35,9 @@ class DQN:
                 'q_variables': q_vars,
                 'target_q_variables': target_q_vars}
 
-    def action(self, state):
+    def action(self, state, is_training=False):
         with tf.variable_scope('q', reuse=tf.AUTO_REUSE):
-            q = q_fn(tf.expand_dims(state, 0), is_training=False)
+            q = q_fn(tf.expand_dims(state, 0), is_training=is_training)
         probs = tf.nn.softmax(q/self.temperature)[0]
         return {'q': q,
                 'action_probabilities': probs,
@@ -83,7 +83,7 @@ if __name__=='__main__':
     summary_writer = tf.summary.FileWriter(LOG_DIR)
     dqn = DQN(q_fn, gamma=GAMMA, temperature=TEMPERATURE)
     def action_fn(state):
-        out = dqn.action(state)
+        out = dqn.action(state, is_training=True)
         return out['action_probabilities'], out['action']
     history = ExperienceHistory(IMAGE_SIZE+[3], history_size=HISTORY_SIZE)
     executor = GymExecutor(env, action_fn, history,
