@@ -2,9 +2,9 @@ import tensorflow as tf
 slim = tf.contrib.slim
 
 # input shape: [None,210,160,3]
-def atari_cnn(x, num_classes=6, is_training=True):
-    batch_norm_params = {'decay': 0.995, 'epsilon': 0.00001,
-                         'center': True, 'scale': True}
+def atari_cnn(x, num_classes=6, decay=0.99, is_training=True):
+    batch_norm_params = {'decay': decay, 'epsilon': 0.00001,
+                         'center': True, 'scale': True, 'renorm': True}
     with slim.arg_scope([slim.conv2d], stride=1, padding='SAME',
                         activation_fn=tf.nn.relu, normalizer_fn=slim.batch_norm):
       with slim.arg_scope([slim.batch_norm], is_training=is_training, **batch_norm_params):
@@ -47,9 +47,9 @@ def atari_cnn(x, num_classes=6, is_training=True):
     return net
 
 # input shape: [None,84,84,3]
-def cnn(x, num_classes=6, decay=0.995, is_training=True):
+def cnn(x, num_classes=6, decay=0.99, is_training=True):
     batch_norm_params = {'decay': decay, 'epsilon': 0.00001,
-                         'center': True, 'scale': True}
+                         'center': True, 'scale': True, 'renorm': True}
     with slim.arg_scope([slim.conv2d], stride=1, padding='SAME',
                         activation_fn=tf.nn.relu, normalizer_fn=slim.batch_norm):
       with slim.arg_scope([slim.batch_norm], is_training=is_training, **batch_norm_params):
