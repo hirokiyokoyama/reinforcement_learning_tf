@@ -86,7 +86,10 @@ if __name__=='__main__':
     IMAGE_SIZE = [84,84]
     FRAME_SKIP = 4
     GAMMA = 0.95
-    PROB_FN = lambda q: epsilon_greedy(q, tf.train.exponential_decay(0.9, global_step, 1000000, 0.01)+0.1)
+    if TRAIN:
+        PROB_FN = lambda q: epsilon_greedy(q, tf.train.exponential_decay(0.9, global_step, 1000000, 0.01)+0.1)
+    else:
+        PROB_FN = PROB_FN = lambda q: epsilon_greedy(q, 0.)
     HISTORY_SIZE = 20000
     MIN_HISTORY_SIZE = 10000
     BATCH_NORM_DECAY = 0.999
@@ -141,7 +144,7 @@ if __name__=='__main__':
                                           tf.summary.scalar('loss', loss)])
         
     def action_fn(state):
-        out = dqn.action(tf.expand_dims(state,0), is_training=TRAIN)
+        out = dqn.action(tf.expand_dims(state,0), is_training=True)
         return out['action_probabilities'][0], out['actions'][0]
     if ATARI:
         def preprocess_obs(x):
